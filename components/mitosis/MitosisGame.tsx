@@ -138,9 +138,9 @@ export function MitosisGame() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-10 sm:px-6">
-      <header className="flex flex-col gap-1">
+      <header className="flex flex-col items-center gap-1 text-center">
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-          체세포분열 카드 매칭
+          체세포분열 카드 게임
         </h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           카드를 보고 알맞은 시기 슬롯을 클릭하세요. 빠를수록 높은 점수를 받습니다.
