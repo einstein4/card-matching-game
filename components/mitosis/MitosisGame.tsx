@@ -60,6 +60,7 @@ export function MitosisGame() {
   const [phaseStats, setPhaseStats] = useState<PhaseStats>(emptyStats());
   const [flash, setFlash] = useState<Flash | null>(null);
   const [potential, setPotential] = useState(5);
+  const [showAnswers, setShowAnswers] = useState(false);
 
   const flashIdRef = useRef(0);
 
@@ -89,6 +90,7 @@ export function MitosisGame() {
     setPhaseStats(emptyStats());
     setResolvingPhase(null);
     setFlash(null);
+    setShowAnswers(false);
   }
 
   function handleSlotClick(phase: Phase) {
@@ -155,15 +157,10 @@ export function MitosisGame() {
         onSlotClick={handleSlotClick}
       />
 
-      <div className="flex items-center justify-between text-sm text-zinc-600 dark:text-zinc-300">
+      <div className="flex items-center justify-center text-sm text-zinc-600 dark:text-zinc-300">
         <span className="font-mono">
           점수 <span className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{score}</span>
         </span>
-        {status === "playing" && (
-          <span className="font-mono text-xs text-zinc-400 dark:text-zinc-500">
-            카드 {Math.min(currentIndex + 1, totalCards)}/{totalCards}
-          </span>
-        )}
       </div>
 
       <main className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-black/10 bg-white/70 p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
@@ -173,6 +170,16 @@ export function MitosisGame() {
               그림 카드 5장과 특징 문장 카드 12장, 총 17장이 무작위 순서로 등장합니다. 시기 이름은
               가려져 있으니 염색체 모양이나 문장만 보고 판단하세요.
             </p>
+
+            <button
+              onClick={() => setShowAnswers((v) => !v)}
+              className="rounded-full border border-amber-600 px-5 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+            >
+              {showAnswers ? "정답 숨기기" : "정답 보기"}
+            </button>
+
+            {showAnswers && <AnswerKey />}
+
             <button
               onClick={startGame}
               className="rounded-full bg-amber-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-amber-700"
@@ -183,18 +190,23 @@ export function MitosisGame() {
         )}
 
         {status === "playing" && currentCard && (
-          <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-3">
             <div className="w-44 sm:w-52">
               {currentCard.kind === "image" ? (
                 <BoxArt phase={currentCard.phase} />
               ) : (
-                <div className="flex aspect-[140/166] w-full items-center justify-center rounded-xl border border-zinc-300 bg-white p-4 text-center shadow-sm dark:border-zinc-600 dark:bg-zinc-900">
+                <div className="flex aspect-[5/7] w-full items-center justify-center rounded-xl border border-zinc-300 bg-white p-4 text-center shadow-sm dark:border-zinc-600 dark:bg-zinc-900">
                   <p className="text-base font-medium text-zinc-800 dark:text-zinc-100">
                     {currentCard.text}
                   </p>
                 </div>
               )}
             </div>
+
+            <p className="font-mono text-[1.5rem] font-semibold text-zinc-500 dark:text-zinc-400">
+              {Math.min(currentIndex + 1, totalCards)}/{totalCards}
+            </p>
+
             <p
               className={`font-mono text-xs transition-opacity ${
                 resolvingPhase ? "opacity-0" : "opacity-100"
@@ -277,6 +289,29 @@ function SlotRow({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function AnswerKey() {
+  return (
+    <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-left dark:border-zinc-700 dark:bg-zinc-900/60">
+      <ul className="flex flex-col gap-3">
+        {PHASES.map(({ id, label, labelEn }) => (
+          <li key={id}>
+            <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+              {label} <span className="text-zinc-400 dark:text-zinc-500">{labelEn}</span>
+            </p>
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              {MITOSIS_CARDS.filter((card) => card.phase === id).map((card) => (
+                <li key={card.id}>
+                  {card.kind === "image" ? "🖼 그림 카드" : `· ${card.text}`}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
