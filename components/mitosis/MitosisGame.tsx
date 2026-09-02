@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   MITOSIS_CARDS,
   PHASES,
-  PHASE_TOTALS,
   pointsForElapsed,
   shuffledDeck,
   type MitosisCard,
@@ -46,6 +45,33 @@ function emptyStats(): PhaseStats {
 
 const RESOLVE_ANIMATION_MS = 550;
 const WRONG_FLASH_MS = 650;
+const BEST_SCORE_KEY = "mitosis-card-game:best-score";
+
+const bestScoreListeners = new Set<() => void>();
+
+function getBestScoreSnapshot(): number | null {
+  const stored = window.localStorage.getItem(BEST_SCORE_KEY);
+  return stored !== null ? Number(stored) : null;
+}
+
+function getBestScoreServerSnapshot(): number | null {
+  return null;
+}
+
+function subscribeBestScore(callback: () => void) {
+  bestScoreListeners.add(callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    bestScoreListeners.delete(callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+// 휴대폰(브라우저)의 localStorage에 최고 점수를 저장하고, 구독 중인 화면에 갱신을 알린다.
+function saveBestScore(value: number) {
+  window.localStorage.setItem(BEST_SCORE_KEY, String(value));
+  bestScoreListeners.forEach((callback) => callback());
+}
 
 export function MitosisGame() {
   const [status, setStatus] = useState<Status>("idle");
@@ -61,10 +87,23 @@ export function MitosisGame() {
   const [flash, setFlash] = useState<Flash | null>(null);
   const [potential, setPotential] = useState(5);
   const [showAnswers, setShowAnswers] = useState(false);
+  const bestScore = useSyncExternalStore(
+    subscribeBestScore,
+    getBestScoreSnapshot,
+    getBestScoreServerSnapshot,
+  );
 
   const flashIdRef = useRef(0);
 
   const currentCard = status === "playing" ? deck[currentIndex] : undefined;
+
+  // 게임이 끝나면 이번 점수를 최고 점수와 비교해 휴대폰에 저장한다.
+  useEffect(() => {
+    if (status !== "finished") return;
+    if (bestScore === null || score > bestScore) {
+      saveBestScore(score);
+    }
+  }, [status, score, bestScore]);
 
   // 활성 카드가 있는 동안 지금 맞히면 받을 점수를 실시간으로 갱신한다.
   useEffect(() => {
@@ -83,6 +122,20 @@ export function MitosisGame() {
     setStatus("playing");
     setCurrentIndex(0);
     setCardStart(Date.now());
+    setWrongCount(0);
+    setScore(0);
+    setLastGain(null);
+    setPlaced(emptyPlaced());
+    setPhaseStats(emptyStats());
+    setResolvingPhase(null);
+    setFlash(null);
+    setShowAnswers(false);
+  }
+
+  function goToStart() {
+    setStatus("idle");
+    setDeck([]);
+    setCurrentIndex(0);
     setWrongCount(0);
     setScore(0);
     setLastGain(null);
@@ -157,17 +210,18 @@ export function MitosisGame() {
         onSlotClick={handleSlotClick}
       />
 
-      <div className="flex items-center justify-center text-sm text-zinc-600 dark:text-zinc-300">
-        <span className="font-mono">
-          점수 <span className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{score}</span>
-        </span>
+      <div className="flex items-end justify-center gap-3 text-[42px] text-zinc-600 dark:text-zinc-300">
+        <span className="font-mono text-5xl font-semibold text-zinc-900 dark:text-zinc-50">{score}</span>
+        {bestScore !== null && (
+          <span className="font-mono text-5xl font-normal text-zinc-900 dark:text-zinc-100">({bestScore})</span>
+        )}
       </div>
 
       <main className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-black/10 bg-white/70 p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
         {status === "idle" && (
           <div className="flex flex-col items-center gap-4 text-center">
             <p className="max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
-              그림 카드 5장과 특징 문장 카드 12장, 총 17장이 무작위 순서로 등장합니다. 시기 이름은
+              그림 카드 5장과 특징 문장 카드 13장, 총 18장이 무작위 순서로 등장합니다. 시기 이름은
               가려져 있으니 염색체 모양이나 문장만 보고 판단하세요.
             </p>
 
@@ -218,7 +272,7 @@ export function MitosisGame() {
         )}
 
         {status === "finished" && (
-          <ResultsScreen score={score} phaseStats={phaseStats} onRestart={startGame} />
+          <ResultsScreen score={score} bestScore={bestScore} phaseStats={phaseStats} onRestart={goToStart} />
         )}
       </main>
     </div>
@@ -241,8 +295,7 @@ function SlotRow({
   return (
     <div className="grid grid-cols-5 gap-2">
       {PHASES.map(({ id, label, labelEn }) => {
-        const count = placed[id].length;
-        const totalForPhase = PHASE_TOTALS[id];
+        const hasImage = placed[id].some((card) => card.kind === "image");
         const isWrong = flash?.wrongPhase === id;
         const isHint = flash?.hintPhase === id;
         const isResolving = resolvingPhase === id;
@@ -256,37 +309,44 @@ function SlotRow({
               : "ring-1 ring-black/10 dark:ring-white/10";
 
         return (
-          <button
-            key={id}
-            onClick={() => onSlotClick(id)}
-            className={`flex flex-col items-center gap-1.5 rounded-xl bg-white/70 px-1 py-3 text-center transition dark:bg-white/5 ${ring}`}
-          >
-            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{label}</span>
-            <span className="hidden text-[10px] uppercase tracking-wide text-zinc-400 sm:block dark:text-zinc-500">
-              {labelEn}
-            </span>
+          <div key={id} className="flex flex-col items-center gap-1.5">
+            <button
+              onClick={() => onSlotClick(id)}
+              className={`relative flex aspect-[5/7] w-full flex-col items-center overflow-hidden rounded-xl bg-white/70 text-center shadow-sm transition dark:bg-white/5 ${ring}`}
+            >
+              {hasImage && (
+                <div className="absolute inset-x-0 bottom-0 flex justify-center">
+                  <div className="w-4/5">
+                    <BoxArt phase={id} />
+                  </div>
+                </div>
+              )}
 
-            <div className="relative mt-1 flex h-6 items-end justify-center">
-              {Array.from({ length: Math.min(count, 4) }).map((_, i) => (
+              <div className="relative z-10 flex w-full flex-col items-center gap-0.5 px-1 pt-2">
                 <span
-                  key={i}
-                  style={{ marginLeft: i === 0 ? 0 : -10, zIndex: i }}
-                  className="h-5 w-3.5 rounded-sm border border-amber-300 bg-amber-100 shadow-sm dark:border-amber-700 dark:bg-amber-900/60"
-                />
-              ))}
-            </div>
+                  className={`text-[15px] font-semibold text-zinc-800 dark:text-zinc-100 ${
+                    hasImage ? "rounded bg-white/85 px-1.5 py-0.5 shadow-sm dark:bg-zinc-900/80" : ""
+                  }`}
+                >
+                  {label}
+                </span>
+                {!hasImage && (
+                  <span className="hidden text-[10px] uppercase tracking-wide text-zinc-400 sm:block dark:text-zinc-500">
+                    {labelEn}
+                  </span>
+                )}
+              </div>
 
-            <span className="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-              {count}/{totalForPhase}
-            </span>
-
-            {isWrong && <span className="text-[10px] font-medium text-rose-500">-1</span>}
-            {isResolving && lastGain !== null && (
-              <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                +{lastGain}
-              </span>
-            )}
-          </button>
+              {isWrong && (
+                <span className="absolute bottom-1.5 text-[10px] font-medium text-rose-500">-1</span>
+              )}
+              {isResolving && lastGain !== null && (
+                <span className="absolute bottom-1.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                  +{lastGain}
+                </span>
+              )}
+            </button>
+          </div>
         );
       })}
     </div>
@@ -295,41 +355,52 @@ function SlotRow({
 
 function AnswerKey() {
   return (
-    <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-left dark:border-zinc-700 dark:bg-zinc-900/60">
-      <ul className="flex flex-col gap-3">
+    <div className="w-full rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-left dark:border-zinc-700 dark:bg-zinc-900/60">
+      <div className="grid grid-cols-5 gap-2">
         {PHASES.map(({ id, label, labelEn }) => (
-          <li key={id}>
-            <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-              {label} <span className="text-zinc-400 dark:text-zinc-500">{labelEn}</span>
-            </p>
-            <ul className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              {MITOSIS_CARDS.filter((card) => card.phase === id).map((card) => (
-                <li key={card.id}>
-                  {card.kind === "image" ? "🖼 그림 카드" : `· ${card.text}`}
-                </li>
+          <div key={id} className="flex flex-col items-center gap-1 text-center">
+            <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">{label}</p>
+            <span className="hidden text-[9px] uppercase tracking-wide text-zinc-400 sm:block dark:text-zinc-500">
+              {labelEn}
+            </span>
+
+            <div className="w-full px-1">
+              <BoxArt phase={id} />
+            </div>
+
+            <ul className="mt-1 flex flex-col gap-0.5 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+              {MITOSIS_CARDS.filter(
+                (card): card is Extract<MitosisCard, { kind: "content" }> =>
+                  card.phase === id && card.kind === "content",
+              ).map((card) => (
+                <li key={card.id}>· {card.text}</li>
               ))}
             </ul>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
 
 function ResultsScreen({
   score,
+  bestScore,
   phaseStats,
   onRestart,
 }: {
   score: number;
+  bestScore: number | null;
   phaseStats: PhaseStats;
   onRestart: () => void;
 }) {
   return (
     <div className="flex w-full flex-col items-center gap-5">
-      <div className="text-center">
-        <p className="text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500">최종 점수</p>
-        <p className="text-4xl font-semibold text-zinc-900 dark:text-zinc-50">{score}</p>
+      <div className="flex items-end justify-center gap-3">
+        <p className="font-mono text-5xl font-semibold text-zinc-900 dark:text-zinc-50">{score}</p>
+        {bestScore !== null && (
+          <p className="font-mono text-5xl font-normal text-zinc-900 dark:text-zinc-100">({bestScore})</p>
+        )}
       </div>
 
       <div className="w-full max-w-xs">
@@ -363,7 +434,7 @@ function ResultsScreen({
         onClick={onRestart}
         className="rounded-full bg-amber-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-amber-700"
       >
-        다시하기
+        처음으로
       </button>
     </div>
   );
