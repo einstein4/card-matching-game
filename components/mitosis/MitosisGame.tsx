@@ -46,7 +46,7 @@ function emptyStats(): PhaseStats {
 const RESOLVE_ANIMATION_MS = 550;
 const WRONG_FLASH_MS = 650;
 const BEST_SCORE_KEY = "mitosis-card-game:best-score";
-const STARTING_LIVES = 3;
+const STARTING_LIVES = 5;
 
 const bestScoreListeners = new Set<() => void>();
 
