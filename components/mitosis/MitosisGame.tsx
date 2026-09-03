@@ -46,6 +46,7 @@ function emptyStats(): PhaseStats {
 const RESOLVE_ANIMATION_MS = 550;
 const WRONG_FLASH_MS = 650;
 const BEST_SCORE_KEY = "mitosis-card-game:best-score";
+const STARTING_LIVES = 5;
 
 const bestScoreListeners = new Set<() => void>();
 
@@ -87,6 +88,8 @@ export function MitosisGame() {
   const [flash, setFlash] = useState<Flash | null>(null);
   const [potential, setPotential] = useState(5);
   const [showAnswers, setShowAnswers] = useState(false);
+  const [lives, setLives] = useState(STARTING_LIVES);
+  const [gameOver, setGameOver] = useState(false);
   const bestScore = useSyncExternalStore(
     subscribeBestScore,
     getBestScoreSnapshot,
@@ -130,6 +133,8 @@ export function MitosisGame() {
     setResolvingPhase(null);
     setFlash(null);
     setShowAnswers(false);
+    setLives(STARTING_LIVES);
+    setGameOver(false);
   }
 
   function goToStart() {
@@ -144,6 +149,8 @@ export function MitosisGame() {
     setResolvingPhase(null);
     setFlash(null);
     setShowAnswers(false);
+    setLives(STARTING_LIVES);
+    setGameOver(false);
   }
 
   function handleSlotClick(phase: Phase) {
@@ -186,6 +193,15 @@ export function MitosisGame() {
       window.setTimeout(() => {
         setFlash((f) => (f && f.id === id ? null : f));
       }, WRONG_FLASH_MS);
+
+      setLives((prev) => {
+        const next = prev - 1;
+        if (next <= 0) {
+          setGameOver(true);
+          setStatus("finished");
+        }
+        return Math.max(0, next);
+      });
     }
   }
 
@@ -201,6 +217,17 @@ export function MitosisGame() {
           카드를 보고 알맞은 시기 슬롯을 클릭하세요. 빠를수록 높은 점수를 받습니다.
         </p>
       </header>
+
+      <div
+        className="flex items-center justify-center gap-1 text-xl"
+        aria-label={`남은 목숨 ${lives}개`}
+      >
+        {Array.from({ length: STARTING_LIVES }).map((_, i) => (
+          <span key={i} className={i < lives ? "text-rose-500" : "text-zinc-300 dark:text-zinc-700"}>
+            ♥
+          </span>
+        ))}
+      </div>
 
       <SlotRow
         placed={placed}
@@ -223,6 +250,10 @@ export function MitosisGame() {
             <p className="max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
               그림 카드 5장과 특징 문장 카드 13장, 총 18장이 무작위 순서로 등장합니다. 시기 이름은
               가려져 있으니 염색체 모양이나 문장만 보고 판단하세요.
+            </p>
+            <p className="max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
+              목숨은 하트 {STARTING_LIVES}개입니다. 오답을 내면 하트가 하나 줄어들고, 하트를 모두
+              잃으면 카드를 다 맞히지 못해도 즉시 게임이 종료됩니다.
             </p>
 
             <button
@@ -272,7 +303,13 @@ export function MitosisGame() {
         )}
 
         {status === "finished" && (
-          <ResultsScreen score={score} bestScore={bestScore} phaseStats={phaseStats} onRestart={goToStart} />
+          <ResultsScreen
+            score={score}
+            bestScore={bestScore}
+            phaseStats={phaseStats}
+            gameOver={gameOver}
+            onRestart={goToStart}
+          />
         )}
       </main>
     </div>
@@ -387,15 +424,23 @@ function ResultsScreen({
   score,
   bestScore,
   phaseStats,
+  gameOver,
   onRestart,
 }: {
   score: number;
   bestScore: number | null;
   phaseStats: PhaseStats;
+  gameOver: boolean;
   onRestart: () => void;
 }) {
   return (
     <div className="flex w-full flex-col items-center gap-5">
+      {gameOver && (
+        <p className="text-sm font-semibold text-rose-500">
+          게임 오버! 목숨을 모두 소진했습니다.
+        </p>
+      )}
+
       <div className="flex items-end justify-center gap-3">
         <p className="font-mono text-5xl font-semibold text-zinc-900 dark:text-zinc-50">{score}</p>
         {bestScore !== null && (
