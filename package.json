@@ -1,6 +1,7 @@
 {
   "name": "card-matching-game",
   "version": "0.1.0",
+  "versionDate": "2026-11-02",
   "private": true,
   "scripts": {
     "dev": "next dev",
